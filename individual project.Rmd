@@ -1,0 +1,393 @@
+---
+title: "Individual Project - Jessica Qu"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(vcd)
+library(dplyr)
+library(ggplot2)
+library(wordcloud)
+library(glmnet)
+library(rpart)
+library(randomForest)
+```
+
+```{r}
+# Loading the dataset and looking at the summary statistics
+data_tech1 = read.csv("2019.csv")
+summary(data_tech1)
+```
+```{r}
+# Removing the entries for non-tech companies/organizations
+data_tech1 = data_tech1 %>% filter(whether_tech == 1)
+View(data_tech1)
+```
+
+
+```{r}
+# Cleaning the gender variable (952 records) and re-classifying into three categories
+malestr = c("male", "Male", "m", "M", "Male ", "Cishet male", "Man", "cis male", "I have a penis", "man", "Malel", "Cisgender male", "male", "Let's keep it simple and say \"male\"", "Identify as male", "Masculine", "Cis Male", "masculino", "CIS Male", "male, born with xy chromosoms", "MALE", "Cis-male", "cis hetero male", "Cis male", "cis-male", "Ostensibly Male", "Mail", "cis male ", "dude")
+femalestr = c("Female", "f", "Female-identified", "cis woman", "Female ", "Female (cis)", "I identify as female", "Cis woman", "Cis-Female", "Cis female ", "cisgender female", "female", "F", "Woman", "woman", "femmina", "Femile", "*shrug emoji* (F)", "Female (cisgender)", "Cisgendered woman", "female (cisgender)", "cis-Female", "femalw", "female (cis)", "Female (cis) ", "F, cisgender", "femail")
+non_binary = c("Non-binary", "Non binary", "Nonbinary", "Trans non-binary/genderfluid", "Non-binary and gender fluid", "transgender", "Trans woman", "Genderqueer", "Genderfluid", "gender non-conforming woman", "agender", "Agender trans woman", "Trans man", "non binary", "genderfluid", "Trans female", "non-binary", "NB", "Agender", "uhhhhhhhhh fem genderqueer?", "Transfeminine", "Female/gender non-binary.", "Agender/genderfluid", "She/her/they/them")
+data_tech1$gender = sapply(as.vector(data_tech1$gender), function(x) if(x %in% malestr) "male" else x )
+data_tech1$gender = sapply(as.vector(data_tech1$gender), function(x) if(x %in% femalestr) "female" else x )
+data_tech1$gender = sapply(as.vector(data_tech1$gender), function(x) if(x %in% non_binary) "non-binary" else x )
+other = c("none", "God King of the Valajar", "sometimes", "None", "Other", "n/a", "Contextual", "", "Demiguy", "SWM", "Male-ish", "\\-")
+for (i in 1:nrow(data_tech1)){
+  if (data_tech1$gender[i] %in% other) {
+    data_tech1$gender[i] = "other"
+  } else data_tech1$gender = data_tech1$gender
+}
+unique(data_tech1$gender)
+data_tech_clean1 = data_tech1[which(data_tech1$gender != "other"), ]
+colnames(data_tech_clean1)[3] = "country"
+```
+```{r}
+# Looking at the unique values in each variable and removing missing values 
+unique(data_tech_clean1$country)
+sum(is.na(data_tech_clean1$country))
+unique(data_tech_clean1$state)
+sum(is.na(data_tech_clean1$state))
+unique(data_tech_clean1$race)
+sum(is.na(data_tech_clean1$race))
+unique(data_tech_clean1$age)
+sum(is.na(data_tech_clean1$age))
+unique(data_tech_clean1$ml_benefit)
+sum(is.na(data_tech_clean1$ml_benefit))
+unique(data_tech_clean1$ml_discussion)
+sum(is.na(data_tech_clean1$ml_discussion))
+unique(data_tech_clean1$ml_resource)
+sum(is.na(data_tech_clean1$ml_resource))
+unique(data_tech_clean1$ml_pl_discussion)
+sum(is.na(data_tech_clean1$ml_pl_discussion))
+unique(data_tech_clean1$ml_with_coworker)
+sum(is.na(data_tech_clean1$ml_with_coworker)) # 2 missing values
+unique(data_tech_clean1$ml_coworker_with_me)
+sum(is.na(data_tech_clean1$ml_coworker_with_me)) # 3 missing values
+data_clean = na.omit(data_tech_clean1)  # data cleaning is done
+View(data_clean)
+```
+```{r}
+# Looking at the data in the US only (663 entries) 
+# Discovered that only people in the US replied to the question regarding race
+# The mental health challenge in tech in the US is my object of interest
+data_us = data_clean[which(data_clean$country == "United States of America"), ]
+View(data_us)
+str(data_us)
+```
+
+```{r}
+# EDA
+# 1-D Distribution of Treatment
+ggplot(data = data_us, aes(x = factor(treatment))) +
+  geom_bar(width = 0.4) +
+  ggtitle("Treatment Count") +
+  guides()+
+  xlab("Treatment") 
+```
+```{r}
+# 1-D Distribution of Gender
+ggplot(data = data_us, aes(x = factor(gender))) +
+  geom_bar(width = 0.4) +
+  ggtitle("Gender Count") +
+  guides()+
+  xlab("Gender") 
+```
+
+```{r}
+# 2-D Gender versus Treatment
+mosaic(treatment ~ gender, data = data_us)
+```
+```{r}
+# 1-D Distribution of state
+state_count = data_us$state
+as.data.frame(sort(table(state_count),decreasing = TRUE))
+```
+```{r}
+# Contingency table of state versus treatment
+table(data_clean$treatment, data_clean$state)
+```
+
+```{r}
+# Count of race
+race_count = data_us$race
+as.data.frame(sort(table(race_count),decreasing = TRUE))
+```
+
+```{r}
+# 1-D Distribution of Race
+ggplot(data = data_us, aes(x = factor(race))) +
+  geom_bar(width = 0.4) +
+  ggtitle("Race Count") +
+  guides()+
+  xlab("Race") 
+```
+```{r}
+# Contingency table of race versus treatment
+table(data_us$treatment, data_us$race)
+```
+
+```{r}
+# 1-D Age distribution
+ggplot(data = data_us, aes(x = age)) +
+  geom_bar() +
+  ggtitle("Age Count") +
+  guides()+
+  xlab("age") 
+```
+```{r}
+# 2-D Age versus treatment
+ggplot(data = data_us, aes(x = factor(treatment), y = age, fill = factor(treatment))) +
+  geom_boxplot() +
+  xlab("Treatment") +
+  ylab("Age") +
+  guides(fill=FALSE) +
+  ggtitle("Treatment versus Age")
+```
+```{r}
+# 1-D ML_Benefit distribution
+ggplot(data = data_us, aes(x = ml_current)) +
+  geom_bar(width = 0.4) +
+  ggtitle("ml_current Count") +
+  guides()+
+  xlab("ml_current") 
+```
+```{r}
+# 2-D ml_current versus Treatment
+mosaic(treatment ~ ml_current, data = data_us)
+```
+
+```{r}
+# 1-D ML_Benefit distribution
+ggplot(data = data_us, aes(x = ml_benefit)) +
+  geom_bar(width = 0.4) +
+  ggtitle("ML_Benefit Count") +
+  guides()+
+  xlab("ml_benefit") 
+```
+```{r}
+# 2-D ML_Benefit versus Treatment
+mosaic(treatment ~ ml_benefit, data = data_us)
+```
+```{r}
+# 1-D ml_pl_discussion distribution
+ggplot(data = data_us, aes(x = data_us$ml_pl_discussion)) +
+  geom_bar(width = 0.4) +
+  ggtitle("ml_pl_discussion count") +
+  guides()+
+  xlab("ml_pl_discussion") 
+```
+```{r}
+# 2-D ml_pl_discussion versus Treatment
+mosaic(treatment ~ ml_pl_discussion, data = data_us)
+```
+```{r}
+# 1-D ml_importance distribution
+ggplot(data = data_us, aes(x = data_us$ml_importance)) +
+  geom_bar() +
+  ggtitle("mental health importance count") +
+  guides()+
+  xlab("ml_importance") 
+```
+```{r}
+# 1-D pl_importance distribution
+ggplot(data = data_us, aes(x = data_us$pl_importance)) +
+  geom_bar() +
+  ggtitle("physical health importance count") +
+  guides()+
+  xlab("pl_importance") 
+```
+
+
+```{r}
+# 2-D Contingency table of ml_importance versus treatment
+table(data_us$treatment, data_us$ml_importance)
+```
+```{r}
+# 1-D ml_interview distribution
+ggplot(data = data_us, aes(x = data_us$ml_interview)) +
+  geom_bar() +
+  ggtitle("willingness to bring up a mental health issue in an interview count") +
+  guides()+
+  xlab("ml_interview") 
+```
+```{r}
+# 2-D ml_interview versus Treatment
+mosaic(treatment ~ ml_interview, data = data_us)
+```
+
+```{r}
+# 1-D tech_support_ml distribution
+ggplot(data = data_us, aes(x = data_us$tech_support_ml)) +
+  geom_bar() +
+  ggtitle("rating of tech industry mental health support count") +
+  guides()+
+  xlab("tech_suuport_ml") 
+```
+```{r}
+# 2-D tech_support_ml versus Treatment
+mosaic(treatment ~ tech_support_ml, data = data_us)
+```
+```{r}
+# 1-D ml_resource distribution
+ggplot(data = data_us, aes(x = data_us$ml_resource)) +
+  geom_bar(width = 0.4) +
+  ggtitle("whether employer offer mental health resource count") +
+  guides()+
+  xlab("ml_resource") 
+```
+```{r}
+# 2-D ml_resource versus Treatment
+mosaic(treatment ~ ml_resource, data = data_us)
+```
+```{r}
+# 1-D family_history distribution
+ggplot(data = data_us, aes(x = data_us$family_history)) +
+  geom_bar(width = 0.4) +
+  ggtitle("whether have a family history of mental illness count") +
+  guides()+
+  xlab("family_history") 
+```
+```{r}
+# 2-D family_history versus Treatment
+mosaic(treatment ~ family_history, data = data_us)
+```
+
+```{r}
+# 1-D ml_friends+family distribution
+ggplot(data = data_us, aes(x = data_us$ml_friends_family)) +
+  geom_bar(width = 0.4) +
+  ggtitle("willingness to share with friends and family count") +
+  guides()+
+  xlab("ml_friends_family") 
+```
+```{r}
+# 2-D ml_friends_family versus treatment
+ggplot(data = data_us, aes(x = factor(treatment), y = ml_friends_family, fill = factor(treatment))) +
+  geom_boxplot() +
+  xlab("Treatment") +
+  ylab("ml_friends_family") +
+  guides(fill=FALSE) +
+  ggtitle("Treatment versus willingness to share with friends and family")
+```
+
+```{r}
+# Splitting training (70%) and test(30%) sets
+set.seed(1234)
+ndata = nrow(data_us)
+train_index = sample(1:ndata, size = 0.7*ndata, rep=FALSE)
+test_index = setdiff(1:ndata, train_index)
+train = data_us[train_index, ]
+test = data_us[test_index, ]
+View(train)
+```
+```{r}
+# Lasso feature selection 
+x_train = model.matrix(treatment~year+gender+race+age+ml_benefit+ml_discussion+ml_resource+ ml_pl_discussion+ml_with_coworker+ml_coworker_with_me+pl_importance+ml_importance+ml_current+ml_past+family_history+ml_friends_family+ml_interview+pl_interview+tech_support_ml, train)[,-1]
+y_train = train %>%
+  select(treatment) %>%
+  unlist() %>%
+  as.numeric()
+lasso_mod = glmnet(x_train, 
+                   y_train, 
+                   alpha = 1)
+plot(lasso_mod)
+```
+```{r}
+# Using cross validation to get the lambda plot
+set.seed(12)
+cv.out = cv.glmnet(x_train, y_train, alpha = 1, family = "binomial")
+plot(cv.out)
+```
+```{r}
+# Selecting the lambda that minimizes training MSE
+bestlam = cv.out$lambda.min
+bestlam
+```
+```{r}
+# Fitting a Lasso regression once again for feature selection
+lasso.treatment = glmnet(x_train, y_train, alpha = 1, family = "binomial", lambda = bestlam)
+coef(lasso.treatment)
+```
+```{r}
+# Training my post-lasso model (logistic regression) based on lasso feature selection
+lasso.glm = glm(treatment~gender+race+age+ml_benefit+ml_resource+ml_with_coworker+ml_current+ml_past+family_history+ml_friends_family+ml_importance+ml_interview+tech_support_ml, data = train, family = binomial)
+summary(lasso.glm)
+```
+```{r}
+# Testing logistic regression on my test set and using confusion matrix to evaluate prediction accuracy
+glm.predict = predict(lasso.glm, test, type = "response")
+View(glm.predict)
+glm.class = ifelse(glm.predict >= .5, "Yes", "No")
+ob.class = test$treatment
+ob.class = ifelse(ob.class == 1, "Yes", "No")
+table(glm.class, ob.class)
+mean(glm.class == ob.class)
+```
+
+```{r}
+# Training my post-lasso model using decision tree
+treatment.tree = rpart(factor(treatment)~gender+race+age+ml_benefit+ml_resource+ml_with_coworker+ml_current+ml_past+family_history+ml_friends_family+ml_importance+ml_interview+tech_support_ml, data = train, method = "class")
+require("rpart.plot")
+rpart.plot::rpart.plot(treatment.tree, type = 2, fallen.leaves = FALSE, extra = 4)
+```
+```{r}
+# Testing classification tree on my test set and using confusion matrix to evalute the model performance
+tree.predict = predict(treatment.tree, test, type = "class")
+View(tree.predict)
+tree.predict = ifelse(tree.predict == 1, "Yes", "No")
+ob.class = test$treatment
+ob.class = ifelse(ob.class == 1, "Yes", "No")
+table(tree.predict, ob.class)
+mean(tree.predict == ob.class)
+```
+
+```{r}
+# Training my model on test set using random forest 
+set.seed(2)
+bag.treatment = randomForest(treatment~gender+race+age+ml_benefit+ml_resource+ml_with_coworker+ml_current+ml_past+family_history+ml_friends_family+ml_importance+ml_interview+tech_support_ml, data = train, mtry = 5, nodesize = 5, ntree = 500, method = "class")
+bag.treatment
+```
+```{r}
+# Testing random forest on my test set and using confusion matrix to evaluate the model performance
+bag.predict = predict(bag.treatment, newdata = test)
+View(bag.predict)
+bag.class = ifelse(bag.predict >= .5, "Yes", "No")
+ob.class = test$treatment
+ob.class = ifelse(ob.class == 1, "Yes", "No")
+table(bag.class, ob.class)
+mean(bag.class == ob.class)
+```
+```{r}
+# Importance plot of random forest for interpretation
+importance(bag.treatment)
+varImpPlot(bag.treatment)
+```
+```{r}
+importance_frame = measure_importance(bag.treatment)
+importance_frame
+```
+
+```{r}
+# Extracting the data set with valid description_tech column (656 entries)
+data_text = data_clean %>% filter(description_tech != "")
+```
+```{r}
+# Text mining analysis - word cloud
+wordcloud(words = data_text$description_tech, min.freq = 1,
+          max.words=150, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+```
+
+
+
+
+
+
+
+
